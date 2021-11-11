@@ -34,7 +34,17 @@ esptool.py.exe --port COM7 --baud 460800 write_flash --flash_size=detect 0 .\esp
 ## Coding
 
 Recommended: use VSCode and the Pymakr extension. Tutorial on using this extension is available [here](https://randomnerdtutorials.com/micropython-esp32-esp8266-vs-code-pymakr/#connecting).
+* In particular, you can use the "run this file" and "upload project" commands.
 
+## Pinout
 
+You must use the GPIO pin numbers in micropython.
+<!-- ![firmware pinout](pinout.webp) -->
+![figs/pinout.png](https://i2.wp.com/randomnerdtutorials.com/wp-content/uploads/2019/05/ESP8266-NodeMCU-kit-12-E-pinout-gpio-pin.png?w=817&quality=100&strip=all&ssl=1)
 
   
+## Haptic Effects
+
+**Actually, we aren't using the haptic interface boards - instead, we're directly controlling it with a transister.**
+[Link](https://learn.adafruit.com/adafruit-drv2605-haptic-controller-breakout/python-circuitpython)
+![](https://cdn-learn.adafruit.com/assets/assets/000/072/594/medium800/adafruit_products_DRV_Waveforms.png?1552347698)
