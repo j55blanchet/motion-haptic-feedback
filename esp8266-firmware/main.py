@@ -10,9 +10,9 @@ def web_page():
   .button2{background-color: #4286f4;}
   .button:disabled{background-color: #444;}</style></head>
   <body> 
-    <h1>ESP Web Server</h1> 
-    <p><a href="/?command=extend"><button class="button">EXTEND</button></a></p>
-    <p><a href="/?command=flex"><button class="button button2">FLEX</button></a></p>
+    <h1>Haptic Feedback Tape</h1> 
+    <p><a href="/?command=extend"><button class="button">Signal EXTEND</button></a></p>
+    <p><a href="/?command=flex"><button class="button button2">Signal FLEX</button></a></p>
     <script> 
         document.querySelectorAll('button').forEach(y => {
             y.onclick = () => {
