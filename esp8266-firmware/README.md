@@ -35,6 +35,7 @@ esptool.py.exe --port COM7 --baud 460800 write_flash --flash_size=detect 0 .\esp
 
 Recommended: use VSCode and the Pymakr extension. Tutorial on using this extension is available [here](https://randomnerdtutorials.com/micropython-esp32-esp8266-vs-code-pymakr/#connecting).
 * In particular, you can use the "run this file" and "upload project" commands.
+* Edit `pymakr.json` to include "Silicon Labs" as an autoconneect_comport_manufacturer.
 
 ## Pinout
 
