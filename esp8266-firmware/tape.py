@@ -55,7 +55,7 @@ def cycle_motors(doStop=True):
 
 stop_motors()
 
-def perform_sequence(sequence, actuation_time = 0.035, inter_phase_time = 0.1):
+def perform_sequence(sequence, actuation_time = 0.035, inter_phase_time = 0.15):
     for duties in sequence:
         for i in range(ledmotor_count):
             set_motor_and_led(i, duties[i])
@@ -64,15 +64,21 @@ def perform_sequence(sequence, actuation_time = 0.035, inter_phase_time = 0.1):
     stop_motors()
     sleep(inter_phase_time)
 
+
+LOW = MAX_DUTY * 0.25
+MEDIUM = MAX_DUTY * 0.5
+HIGH = MAX_DUTY * 0.75
+FULL = MAX_DUTY
+
 extension_phases = [
     (0, 0, 0, 0),
-    (0, MAX_DUTY/2, MAX_DUTY/2, 0),
-    (0, MAX_DUTY, MAX_DUTY, 0),
-    (MAX_DUTY*0.25, MAX_DUTY*0.75, MAX_DUTY*0.75, MAX_DUTY*0.25),
-    (MAX_DUTY*0.5, MAX_DUTY*0.5, MAX_DUTY*0.5, MAX_DUTY*0.5),
-    (MAX_DUTY*0.75, MAX_DUTY*0.25, MAX_DUTY*0.25, MAX_DUTY*0.75),
-    (MAX_DUTY, 0, 0, MAX_DUTY),
-    (MAX_DUTY*0.5, 0, 0, MAX_DUTY*0.5),
+    (0, MEDIUM, MEDIUM, 0),
+    (0, FULL, FULL, 0),
+    (LOW, HIGH, HIGH, LOW),
+    (MEDIUM, MEDIUM, MEDIUM, MEDIUM),
+    (HIGH, LOW, LOW, HIGH),
+    (FULL, 0, 0, FULL),
+    (MEDIUM, 0, 0, MEDIUM),
     (0, 0, 0, 0),
 ]
 
@@ -84,4 +90,25 @@ def show_extension_sequence():
 def show_retraction_sequence():
     for _ in range(3):
         perform_sequence(reversed(extension_phases))
+    stop_motors()
+
+linear_phases = [
+    (0, 0, 0, 0),
+    (LOW, 0, 0, 0),
+    (HIGH, LOW, 0, 0),
+    (LOW, HIGH, LOW, 0, 0),
+    (0, LOW, HIGH, LOW),
+    (0, 0, LOW, HIGH),
+    (0, 0, 0, LOW),
+    (0, 0, 0, 0),
+]
+
+def show_forward_sequence():
+    for _ in range(3):
+        perform_sequence(linear_phases)
+    stop_motors()
+
+def show_backward_sequence():
+    for _ in range(3):
+        perform_sequence(reversed(linear_phases))
     stop_motors()

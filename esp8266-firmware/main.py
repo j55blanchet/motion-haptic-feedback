@@ -8,11 +8,15 @@ def web_page():
   h1{color: #0F3376; padding: 2vh;}p{font-size: 1.5rem;}.button{display: inline-block; background-color: #e7bd3b; border: none; 
   border-radius: 4px; color: white; padding: 16px 40px; text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}
   .button2{background-color: #4286f4;}
+  .button3{background-color: #5d805b;}
+  .button4{background-color: #9e4646;}
   .button:disabled{background-color: #444;}</style></head>
   <body> 
     <h1>Haptic Feedback Tape</h1> 
     <p><a href="/?command=extend"><button class="button">Signal EXTEND</button></a></p>
     <p><a href="/?command=flex"><button class="button button2">Signal FLEX</button></a></p>
+    <p><a href="/?command=forward"><button class="button button3">Signal FOWARD</button></a></p>
+    <p><a href="/?command=backward"><button class="button button4">Signal BACKWARD</button></a></p>
     <script> 
         document.querySelectorAll('button').forEach(y => {
             y.onclick = () => {
@@ -37,6 +41,9 @@ while True:
   print('Content = %s' % request)
   extend_control = request.find('/?command=extend')
   flex_control = request.find('/?command=flex')
+  forward_control = request.find('/?command=forward')
+  backward_control = request.find('/?command=backward')
+  
   if extend_control == 6:
     print('EXTEND CONTROL')
     tape.show_extension_sequence()
@@ -44,6 +51,14 @@ while True:
   if flex_control == 6:
     print('FLEX CONTROL')
     tape.show_retraction_sequence()
+
+  if forward_control == 6:
+    print('FORWARD CONTROL')
+    tape.show_forward_sequence()
+
+  if backward_control == 6:
+    print('BACKWARD CONTROL')
+    tape.show_backward_sequence()
 
   response = web_page()
   conn.send('HTTP/1.1 200 OK\n')
