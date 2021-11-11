@@ -55,7 +55,7 @@ def cycle_motors(doStop=True):
 
 stop_motors()
 
-def perform_sequence(sequence, actuation_time = 0.035, inter_phase_time = 0.15):
+def perform_sequence(sequence, actuation_time = 0.059, inter_phase_time = 0.5):
     for duties in sequence:
         for i in range(ledmotor_count):
             set_motor_and_led(i, duties[i])
@@ -84,12 +84,12 @@ extension_phases = [
 
 def show_extension_sequence():
     for _ in range(3):
-        perform_sequence(extension_phases)
+        perform_sequence(reversed(extension_phases))
     stop_motors()
 
 def show_retraction_sequence():
     for _ in range(3):
-        perform_sequence(reversed(extension_phases))
+        perform_sequence((extension_phases))
     stop_motors()
 
 linear_phases = [
