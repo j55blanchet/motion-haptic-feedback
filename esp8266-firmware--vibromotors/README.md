@@ -4,7 +4,7 @@ This project has the firmware for a finger haptic feedback device. It uses micro
 
 ### Setup
 
-* Ensure you have usb drivers installed for the CH340 chip.
+* Ensure you have usb drivers installed for the CH340 or CP2102 chip. The [ones in use](https://smile.amazon.com/gp/product/B07L8W9SP3/ref=ppx_yo_dt_b_search_asin_title?ie=UTF8&psc=1) as of 2022-03 have 4MB flash.
 
 * [Installation Instructions](https://docs.micropython.org/en/latest/esp8266/tutorial/intro.html)
 
@@ -20,6 +20,17 @@ pip install esptool
 ```
 esptool.py --port COM7 erase_flash
 esptool.py.exe --port COM7 --baud 460800 write_flash --flash_size=detect 0 .\esp8266-20210902-v1.17.bin
+```
+
+(on mac):
+```
+esptool.py --port /dev/tty.SLAB_USBtoUART --baud 460800 write_flash --flash_size=detect 0 ./esp8266-firmware/esp8266-20220117-v1.18.bin
+```
+
+* On mac, you can use the following command to view available serial devices.
+```
+ls /dev/tty.*
+ls /dev/cu.*
 ```
 
 
