@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include "boreas1901.h"
+#include "bos1901.h"
 
 
 BOS1901 *chip = NULL;

@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-#include "boreas1901.h"
+#include "bos1901.h"
 
 //// ARDUINO SPI MODES TABLE ////
 // From: https://www.arduino.cc/en/reference/SPI
