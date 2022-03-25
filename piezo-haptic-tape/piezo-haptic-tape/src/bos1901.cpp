@@ -53,9 +53,51 @@ void BOS1901::setConfig(uint8_t output_reg_select, bool lock_registers, bool ena
 }
 
 void BOS1901::setSENSE(bool enableSensing) {
-    uint16_t command_data = enableSensing << 11; // Enable SENSE
+    
+    uint16_t command_data = 0x0000; // Enable SENSE
+    command_data |= enableSensing << 11;
+
+    uint16_t VDD_dig_representation = 0x05; // the default, corresponds to VDD = 5.0 V?
+    command_data |= VDD_dig_representation << 6;
+
+    uint8_t ti_rise_default = 0x27;
+    command_data |= ti_rise_default;
+
     uint16_t command = makeCommand(REG_SUP_RISE, command_data);
     transfer(command);
+}
+
+void BOS1901::scanRegisters() {
+
+    const uint8_t reg_addrs[] = {
+        REG_REFERENCE,
+        REG_ION_BLOCK,
+        REG_DEADTIME,
+        REG_KP,
+        REG_KPA_KI,
+        REG_CONFIG,
+        REG_PARCAP,
+        REG_SUP_RISE,
+        REG_DAC,
+        REG_IC_STATUS,
+        REG_SENSE,
+        REG_TRIM
+    };
+
+    for(auto i = 0U; i < sizeof reg_addrs; i++) {
+
+        auto reg = reg_addrs[i];
+        setConfig(reg, false, true, 0);
+
+        // Sets 0V to output.
+        uint16_t command = makeCommand(REG_REFERENCE, 0x0000);
+        uint16_t receivedData = transfer(command);
+        Serial.print("Register: 0x");
+        Serial.print(String(reg, HEX));
+        Serial.print(" = ");
+        Serial.println(String(receivedData, HEX));
+    }
+
 }
 
 void BOS1901::reset() {

@@ -10,7 +10,8 @@ void setup() {
 
   // put your setup code here, to run once:
   pinMode(LED_BUILTIN, OUTPUT);
-  Serial.begin(9600);
+  Serial.begin(115200);
+  Serial.println("\nBOS1901 SPI test");
 
   chip = new BOS1901(SPI, D8);
 
@@ -28,9 +29,11 @@ void loop() {
   // digitalWrite(LED_BUILTIN, LOW);
   // // Serial.println("Low");
 
+  chip->scanRegisters();
+
   auto voltage = chip->senseVoltage();
   Serial.println("Voltage: " + String(voltage));
-  delay(300);
+  delay(2000);
 }
 
 // 11110000000

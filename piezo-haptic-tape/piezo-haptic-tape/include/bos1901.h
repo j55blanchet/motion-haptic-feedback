@@ -26,7 +26,6 @@ class BOS1901 {
     SPIClass &_spi;
     uint8_t _chipSelectPin;
 
-
     uint16_t makeCommand(uint8_t reg_addr, uint16_t data);
     uint16_t transfer(uint16_t write_command);
     void setConfig(uint8_t output_reg_select, bool lock_registers, bool enable_waveform_playback, uint8_t playback_speed);
@@ -49,7 +48,7 @@ class BOS1901 {
         void reset();
         uint16_t getADCoffset();
         uint16_t senseVoltage();
-
+        void scanRegisters();
 };
 
 #endif
