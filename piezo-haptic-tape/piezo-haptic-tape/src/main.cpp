@@ -13,7 +13,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println("\nBOS1901 SPI test");
 
-  chip = new BOS1901(SPI, D8);
+  chip = new BOS1901(SPI, D1);
 
   auto offset = chip->getADCoffset();
   Serial.println("ADC offset: " + String(offset));
@@ -31,9 +31,9 @@ void loop() {
 
   chip->scanRegisters();
 
-  auto voltage = chip->senseVoltage();
-  Serial.println("Voltage: " + String(voltage));
-  delay(2000);
+  // auto voltage = chip->senseVoltage();
+  // Serial.println("Voltage: " + String(voltage));
+  delay(3000);
 }
 
 // 11110000000
