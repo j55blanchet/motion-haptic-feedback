@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "piezo-haptic-tape"
+		},
+		{
+			"name": "spi_slave_uno_tester",
+			"path": "spi_slave_uno_tester"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"functional": "cpp"
+		}
+	}
+}
