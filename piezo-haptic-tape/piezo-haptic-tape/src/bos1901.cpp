@@ -20,11 +20,13 @@
 // * CS should be set LOW to enable the chip.
 
 BOS1901::BOS1901(SPIClass &spi, uint8_t chipSelectPin): _spi(spi), _chipSelectPin(chipSelectPin) {
+    pinMode(_chipSelectPin, OUTPUT);
+    SPI.begin();
 }
     
 
 uint16_t BOS1901::makeCommand(uint8_t reg_addr, uint16_t data) {
-    uint16_t command = (reg_addr) << 12 + data & 0x0FFF;
+    uint16_t command = (reg_addr << 12) + (data & 0x0FFF);
     return command;
 }
 
@@ -34,10 +36,21 @@ uint16_t BOS1901::transfer(uint16_t write_command) {
     _spi.beginTransaction(SPISettings(clock, MSBFIRST, spi_mode));
 
     digitalWrite(_chipSelectPin, LOW);
+    // uint8_t data1 = _spi.transfer(highByte(write_command));
+    // uint8_t data2 = _spi.transfer(lowByte(write_command));
+
+
     uint16_t receivedData = _spi.transfer16(write_command);
     digitalWrite(_chipSelectPin, HIGH);
 
     _spi.endTransaction();
+
+    // uint16_t receivedData = (data1 << 8) | data2;
+
+    // Serial.print("  SPI Transfer. SENT: ");
+    // Serial.print(write_command, HEX);
+    // Serial.print(" RECEIVED: ");
+    // Serial.println(receivedData, HEX);
     return receivedData;
 }
 
@@ -49,6 +62,7 @@ void BOS1901::setConfig(uint8_t output_reg_select, bool lock_registers, bool ena
     config |= playback_speed & 0b00000111;
 
     uint16_t command = makeCommand(REG_CONFIG, config);
+    // Serial.println("Setting config. New output register: 0x" + String(output_reg_select, HEX) + "  Command: 0x" + String(command, HEX) + "  Config: 0x" + String(config, HEX));
     transfer(command);
 }
 
@@ -70,15 +84,15 @@ void BOS1901::setSENSE(bool enableSensing) {
 void BOS1901::scanRegisters() {
 
     const uint8_t reg_addrs[] = {
-        REG_REFERENCE,
-        REG_ION_BLOCK,
+        // REG_REFERENCE,
+        // REG_ION_BLOCK,
         REG_DEADTIME,
-        REG_KP,
-        REG_KPA_KI,
+        // REG_KP,
+        // REG_KPA_KI,
         REG_CONFIG,
-        REG_PARCAP,
-        REG_SUP_RISE,
-        REG_DAC,
+        // REG_PARCAP,
+        // REG_SUP_RISE,
+        // REG_DAC,
         REG_IC_STATUS,
         REG_SENSE,
         REG_TRIM
@@ -96,6 +110,7 @@ void BOS1901::scanRegisters() {
         Serial.print(String(reg, HEX));
         Serial.print(" = ");
         Serial.println(String(receivedData, HEX));
+        // delayMicroseconds(100);
     }
 
 }
