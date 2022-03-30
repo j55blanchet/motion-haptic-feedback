@@ -5,6 +5,7 @@
 
 #include <SPI.h>
 
+
 class BOS1901 {
 
     static const uint8_t REG_REFERENCE = 0x00; // R/W. Input of the FIFO. Desired amplitude of output in 12-bit two's complement format.
@@ -29,7 +30,7 @@ class BOS1901 {
     uint8_t _vddSupRise;
     bool _lockRegisters;
     bool _outputEnabled;
-
+    
     uint16_t getRegisterContents(uint8_t reg_addr);
     uint16_t getContentOfResponse(uint16_t data);
     uint8_t getRegisterOfResponse(uint16_t data);
@@ -51,17 +52,26 @@ class BOS1901 {
         static const uint8_t PLAYBACK_SPEED_16_ksps   = 0x6;
         static const uint8_t PLAYBACK_SPEED_8_ksps    = 0x7;
 
+        float minPiezoVoltage;
+        float maxPiezoVoltage;
+
         BOS1901(
             SPIClass &spi, 
             uint8_t chipSelectPin, 
             uint8_t playback_spd, 
             bool lock_registers,
-            float supply_voltage);
+            float supply_voltage,
+            float minPiezoVoltage,
+            float maxPiezoVoltage
+            );
 
         void reset();
         uint16_t getADCoffset();
-        uint16_t senseVoltage();
+        double senseVoltage();
         void scanRegisters(bool verbose);
+
+        bool hasFifoSpace();
+        void writeToFifo(float voltage);
 
         void print_reg_reference(bool verbose);
         void print_reg_ion_bl(bool verbose);

@@ -10,7 +10,11 @@
 	],
 	"settings": {
 		"files.associations": {
-			"functional": "cpp"
+			"functional": "cpp",
+			"array": "cpp",
+			"string": "cpp",
+			"string_view": "cpp",
+			"ranges": "cpp"
 		}
 	}
 }

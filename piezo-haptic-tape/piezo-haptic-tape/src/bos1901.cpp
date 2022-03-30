@@ -45,6 +45,12 @@ int16_t UpscaleTwosComplement(int16_t value, size_t length)
         return (~mask & value);
     }
 }
+
+double computeSensedVoltage(uint16_t v_feedback) {
+    v_feedback = v_feedback & 0x3FF;
+    return ((double) v_feedback) * 3.6 * 31 / (pow(2,10) - 1);
+};
+
 const uint32_t bos1901_spi_freq = 200000;
 const uint8_t bos1901_spi_mode = SPI_MODE0;
 
@@ -53,11 +59,16 @@ BOS1901::BOS1901(
     uint8_t chipSelectPin, 
     uint8_t playbackSpeed, 
     bool lock_registers,
-    float supply_voltage): 
+    float supply_voltage,
+    float minPiezoVoltage,
+    float maxPiezoVoltage
+    ): 
         _spi(spi), 
         _chipSelectPin(chipSelectPin), 
         _playbackSpeed(playbackSpeed), 
-        _lockRegisters(lock_registers) 
+        _lockRegisters(lock_registers),
+        minPiezoVoltage(minPiezoVoltage),
+        maxPiezoVoltage(maxPiezoVoltage)
 {
     _outputEnabled = false;
 
@@ -133,6 +144,9 @@ uint16_t BOS1901::setConfig(uint8_t output_reg_select, bool enable_waveform_play
 
 void BOS1901::setSENSE(bool enableSensing) {
     
+    // Unlock registers so we can enable sensing!
+    setConfig(REG_SENSE, _outputEnabled, true);
+
     uint16_t command_data = 0x0000; // Enable SENSE
     command_data |= enableSensing << 11;
 
@@ -143,6 +157,9 @@ void BOS1901::setSENSE(bool enableSensing) {
 
     uint16_t command = makeCommand(REG_SUP_RISE, command_data);
     transfer(command);
+
+    // Relock registers
+    setConfig(REG_SENSE, _outputEnabled, _lockRegisters);
 }
 
 uint16_t BOS1901::getRegisterContents(uint8_t reg_addr) {
@@ -169,6 +186,28 @@ void BOS1901::print_reg_reference(bool verbose) {
     } else {
         Serial.println("REG_REFERENCE (0x" + String(getRegisterOfResponse(fifo), HEX) + "): " + String(fifo_dec));
     }
+}
+
+void BOS1901::writeToFifo(float voltage) {
+
+    // Ensure sensing bit isn't muting the output
+    setSENSE(false);
+
+    voltage = min(voltage, maxPiezoVoltage);
+    voltage = max(voltage, minPiezoVoltage);
+
+    float vref = 3.6;
+    float fb_ratio = 31.0;
+    float denominator = (float) (pow(2, 11) - 1.0);
+
+    float amplitude = (voltage / fb_ratio) * (denominator / vref);
+    int16_t uint_amplitude = (int16_t) amplitude;
+    uint_amplitude = min(uint_amplitude, (int16_t) 1743);
+
+    uint16_t fifo_data = (uint_amplitude >> 4) & 0x0FFF;
+    // Serial.println("INSERT FIFO " + String(fifo_data) + " (0x" + String(fifo_data, HEX) + "): " + String(voltage) + "V");
+    uint16_t command = makeCommand(REG_REFERENCE, fifo_data);
+    transfer(command);
 }
 
 void BOS1901::print_reg_ion_bl(bool verbose) {
@@ -434,7 +473,7 @@ void BOS1901::print_reg_ic_status(bool verbose) {
     String empty_str = empty ? "FIFO-empty" : "FIFO-not-empty";
 
     uint8_t fifo_space = ic_status_contents & 0x3F;
-    String fifo_space_str = String(fifo_space);
+    String fifo_space_str = String(fifo_space) + "-space";
 
     if (verbose) {
         Serial.println("IC_STATUS (0x" + String(getRegisterOfResponse(ic_status), HEX) + "):");
@@ -450,6 +489,14 @@ void BOS1901::print_reg_ic_status(bool verbose) {
     }
 }
 
+bool BOS1901::hasFifoSpace() {
+    auto ic_status = getRegisterContents(REG_IC_STATUS);
+    auto ic_status_contents = getContentOfResponse(ic_status);
+
+    bool full = (ic_status_contents >> 7) & 0x1;
+    return !full;
+}
+
 void BOS1901::print_reg_sense(bool verbose) {
     auto sense = getRegisterContents(REG_SENSE);
     auto sense_contents = getContentOfResponse(sense);
@@ -462,7 +509,7 @@ void BOS1901::print_reg_sense(bool verbose) {
     else if (state == 0x3) state_str = "ERROR";
 
     uint16_t v_feedback = sense_contents & 0x3FF;
-    double v_feedback_v = ((double) v_feedback) * 3.6 * 31 / (pow(2,10) - 1);
+    double v_feedback_v = computeSensedVoltage(v_feedback);
     String v_feedback_str = String(v_feedback) + "-" + String(v_feedback_v, 2) + "V";
 
     if (verbose) {
@@ -538,7 +585,7 @@ uint16_t BOS1901::writeWaveform(uint16_t waveForm) {
     return transfer(command);
 }
 
-uint16_t BOS1901::senseVoltage() {
+double BOS1901::senseVoltage() {
 
     // Set chip to SENSE, which mutes the waveform output, allowing 
     // the voltage to move freely and for us to get a reading.
@@ -550,7 +597,8 @@ uint16_t BOS1901::senseVoltage() {
     _spi.write16(command);
 
     // Read the output
-    return transfer(command);
+    uint16_t data = transfer(command) & 0x0FFF;
+    return computeSensedVoltage(data);
 }
 
 uint16_t BOS1901::getADCoffset() {
