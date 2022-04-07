@@ -46,9 +46,9 @@ int16_t UpscaleTwosComplement(int16_t value, size_t length)
     }
 }
 
-double computeSensedVoltage(uint16_t v_feedback) {
+float computeSensedVoltage(uint16_t v_feedback) {
     v_feedback = v_feedback & 0x3FF;
-    return ((double) v_feedback) * 3.6 * 31 / (pow(2,10) - 1);
+    return (v_feedback) * 3.6f * 31 / (pow(2,10) - 1);
 };
 
 const uint32_t bos1901_spi_freq = 200000;
@@ -71,6 +71,10 @@ BOS1901::BOS1901(
         maxPiezoVoltage(maxPiezoVoltage)
 {
     _outputEnabled = false;
+    _outputRegister = REG_DEADTIME;
+    _lastReceivedDataSource = REG_DEADTIME;
+    _lastReceivedData = 0x0000;
+    _outputMutedForSensing = false;
 
     pinMode(_chipSelectPin, OUTPUT);
     // _spi.setFrequency(bos1901_spi_freq);
@@ -94,11 +98,11 @@ BOS1901::BOS1901(
     Serial.println("Setting VDD in SUPRISE to " + String(vdd_config, HEX));
     transfer(command);
 
-    if (supply_voltage - 5.0 < 1.0) {
-        // Disable charge pump
-        uint16_t parcap_command = 0b0110010000111010; // keeps defaults, sets address to parcap register
-        transfer(parcap_command);
-    }   
+    // if (supply_voltage - 5.0 < 1.0) {
+    //    // Disable charge pump
+    //    uint16_t parcap_command = 0b0110010000111010; // keeps defaults, sets address to parcap register
+    //    transfer(parcap_command);
+    //}   
 }
 
 uint16_t BOS1901::makeCommand(uint8_t reg_addr, uint16_t data) {
@@ -114,7 +118,8 @@ uint16_t BOS1901::transfer(uint16_t write_command) {
     // uint8_t data2 = _spi.transfer(lowByte(write_command));
 
 
-    uint16_t receivedData = _spi.transfer16(write_command);
+    _lastReceivedData = _spi.transfer16(write_command);
+    _lastReceivedDataSource = _outputRegister;
     digitalWrite(_chipSelectPin, HIGH);
 
     _spi.endTransaction();
@@ -125,11 +130,17 @@ uint16_t BOS1901::transfer(uint16_t write_command) {
     // Serial.print(write_command, HEX);
     // Serial.print(" RECEIVED: ");
     // Serial.println(receivedData, HEX);
-    return receivedData;
+    return _lastReceivedData;
+}
+
+void BOS1901::setOutputEnabled(bool enabled) {
+    _outputEnabled = enabled;
+    setConfig(_outputRegister, enabled);
 }
 
 uint16_t BOS1901::setConfig(uint8_t output_reg_select, bool enable_waveform_playback, bool override_unlock_registers) {
     _outputEnabled = enable_waveform_playback;
+    _outputRegister = output_reg_select;
 
     uint16_t config = 0x0000;
     config |= (output_reg_select << 7);
@@ -142,14 +153,35 @@ uint16_t BOS1901::setConfig(uint8_t output_reg_select, bool enable_waveform_play
     return transfer(command);
 }
 
+void BOS1901::initializeSensing(bool muteWaveformOutput, bool positivePolarity) {
+    // Refresh ADC offset - first step: Drive to 0
+    setConfig(REG_SENSE, true, true);
+    setSENSE(false);
+    writeToFifo(0.0);
+    
+    _feedbackAdcOffset = getRegisterContents(
+        REG_SENSE, 
+        false,     // don't allow cached value
+        REG_SENSE, // likely to use REG_SENSE for sensing after this
+        true       // keep registers unlocked
+    );
+
+    // Now, mute output if desired
+    if (muteWaveformOutput) {
+        setSENSE(muteWaveformOutput);
+    }
+    setConfig(REG_SENSE, true, false);
+    writeToFifo(positivePolarity ? 0x000 : 0xFFF); // set H-bridge in positive polarity
+}
+
 void BOS1901::setSENSE(bool enableSensing) {
     
-    // Unlock registers so we can enable sensing!
-    setConfig(REG_SENSE, _outputEnabled, true);
+    if (_outputMutedForSensing == enableSensing) {
+        return;
+    }
 
     uint16_t command_data = 0x0000; // Enable SENSE
     command_data |= enableSensing << 11;
-
     command_data |= _vddSupRise << 6;
 
     uint8_t ti_rise_default = 0x27;
@@ -157,14 +189,18 @@ void BOS1901::setSENSE(bool enableSensing) {
 
     uint16_t command = makeCommand(REG_SUP_RISE, command_data);
     transfer(command);
-
-    // Relock registers
-    setConfig(REG_SENSE, _outputEnabled, _lockRegisters);
+    _outputMutedForSensing = enableSensing;
 }
 
-uint16_t BOS1901::getRegisterContents(uint8_t reg_addr) {
-    setConfig(reg_addr, _outputEnabled);
-    return setConfig(reg_addr, _outputEnabled);
+uint16_t BOS1901::getRegisterContents(uint8_t reg_addr, bool allow_cached, uint8_t next_reg_addr, bool keep_registers_unlocked) {
+    if (reg_addr != _outputRegister) {
+        setConfig(reg_addr, _outputEnabled, keep_registers_unlocked);
+    } else if (allow_cached && _lastReceivedDataSource == reg_addr) {
+        return _lastReceivedData;
+    }
+    
+    auto next_reg = (next_reg_addr == REG_NONE) ? reg_addr : next_reg_addr;
+    return setConfig(next_reg, _outputEnabled, keep_registers_unlocked);
 }
 
 uint16_t BOS1901::getContentOfResponse(uint16_t data) {
@@ -181,33 +217,51 @@ void BOS1901::print_reg_reference(bool verbose) {
     int16_t fifo_dec = UpscaleTwosComplement((int16_t) fifo_content, 12);
 
     if (verbose) {
-        Serial.println("REG_REFERENCE: (0x" + String(getRegisterOfResponse(fifo), HEX) + "):");
+        Serial.println("REG_REFERENCE: (0x" + String(fifo, HEX) + "):");
         Serial.println("  FIFO: " + String(fifo_dec));
     } else {
-        Serial.println("REG_REFERENCE (0x" + String(getRegisterOfResponse(fifo), HEX) + "): " + String(fifo_dec));
+        Serial.println("REG_REFERENCE (0x" + String(fifo, HEX) + "): " + String(fifo_dec));
     }
 }
 
-void BOS1901::writeToFifo(float voltage) {
 
-    // Ensure sensing bit isn't muting the output
-    setSENSE(false);
+void BOS1901::writeToFifo(uint16_t value) {
+    uint16_t command = makeCommand(REG_REFERENCE, value & 0x0FFF);
+    transfer(command);
+}
+void BOS1901::writeFifoVoltage(float voltage) {
 
     voltage = min(voltage, maxPiezoVoltage);
     voltage = max(voltage, minPiezoVoltage);
 
-    float vref = 3.6;
-    float fb_ratio = 31.0;
-    float denominator = (float) (pow(2, 11) - 1.0);
+    const float vref = 3.6f;
+    const float fb_ratio = 31.0f;
+    const float divider = vref * fb_ratio;
+    const float multiplier = pow(2, 11) - 1.0f;
+    float amplitude_signal = voltage * multiplier / divider;
+    int16_t int_amplitude = static_cast<int16_t>(amplitude_signal);
+    int_amplitude = min(int_amplitude, (int16_t) 1743);
+    int_amplitude = max(int_amplitude, (int16_t) -1742);
 
-    float amplitude = (voltage / fb_ratio) * (denominator / vref);
-    int16_t uint_amplitude = (int16_t) amplitude;
-    uint_amplitude = min(uint_amplitude, (int16_t) 1743);
+    uint16_t data = highByte(int_amplitude) << 8;
+    data |= lowByte(int_amplitude);
+    
+    writeToFifo(data);
+}
 
-    uint16_t fifo_data = (uint_amplitude >> 4) & 0x0FFF;
-    // Serial.println("INSERT FIFO " + String(fifo_data) + " (0x" + String(fifo_data, HEX) + "): " + String(voltage) + "V");
-    uint16_t command = makeCommand(REG_REFERENCE, fifo_data);
+void BOS1901::setSquareWavePlayback(bool enable) {
+
+    // Unlock registers
+    setConfig(_outputRegister, _outputEnabled, true);
+
+    // Set square wave enabled bit on KP register
+    uint16_t kp_val = 0x080;
+    uint16_t kp_command_data = (enable << 11) | kp_val;
+    uint16_t command = makeCommand(REG_KP, kp_command_data);
     transfer(command);
+
+    // Relock registers
+    setConfig(_outputRegister, _outputEnabled, false);
 }
 
 void BOS1901::print_reg_ion_bl(bool verbose) {
@@ -237,13 +291,13 @@ void BOS1901::print_reg_ion_bl(bool verbose) {
     if (ionscale == 0xA0) ionscale_str += "-default";
 
     if (verbose) {
-        Serial.println("ION_BLOCK (0x" + String(getRegisterOfResponse(ion_bl), HEX) + "):");
+        Serial.println("ION_BLOCK (0x" + String(ion_bl, HEX) + "):");
         Serial.println("  fswmax: 0x" + String(fswmax, HEX) + " (" + fswmax_hz + ")");
         Serial.println("  sb: 0x" + String(sb, HEX) + " (" + String(sb_ns) + ")");
         Serial.println("  ionscale: " + ionscale_str);
     }
     else {
-        Serial.print("ION_BLOCK (0x" + String(getRegisterOfResponse(ion_bl), HEX) + "): ");
+        Serial.print("ION_BLOCK (0x" + String(ion_bl, HEX) + "): ");
         Serial.println("0x" + String(fswmax, HEX) + "  0x" + String(sb, HEX) + "  " + ionscale_str);
     }
 }
@@ -261,11 +315,11 @@ void BOS1901::print_reg_deadtime(bool verbose) {
     if (dls == 0x0A) dls_str += "-default";
 
     if (verbose) {
-        Serial.println("DEADTIME (0x" + String(getRegisterOfResponse(dead_time), HEX) + "):");
+        Serial.println("DEADTIME (0x" + String(dead_time, HEX) + "):");
         Serial.println("  dhs: " + dhs_str);
         Serial.println("  dls: " + dls_str);
     } else {
-        Serial.print("DEADTIME (0x" + String(getRegisterOfResponse(dead_time), HEX) + "): ");
+        Serial.print("DEADTIME (0x" + String(dead_time, HEX) + "): ");
         Serial.println(dhs_str + "  " + dls_str);
     }
 }
@@ -282,11 +336,11 @@ void BOS1901::print_reg_kp(bool verbose) {
     if (kp == 0x080) kp_str += "-default";
 
     if (verbose) {
-        Serial.println("KP (0x" + String(getRegisterOfResponse(kp), HEX) + "):");
+        Serial.println("KP (0x" + String(kp, HEX) + "):");
         Serial.println("  sq: " + sq_str);
         Serial.println("  kp: " + kp_str);
     } else {
-        Serial.print("KP (0x" + String(getRegisterOfResponse(kp), HEX) + "): ");
+        Serial.print("KP (0x" + String(kp, HEX) + "): ");
         Serial.println(sq_str + "  " + kp_str);
     }
 }
@@ -304,11 +358,11 @@ void BOS1901::print_reg_kpa_ki(bool verbose) {
     if (kpa == 0xA0) kpa_str += "-default";
 
     if (verbose) {
-        Serial.println("KPA_KI (0x" + String(getRegisterOfResponse(kpa_ki), HEX) + "):");
+        Serial.println("KPA_KI (0x" + String(kpa_ki, HEX) + "):");
         Serial.println("  kibase: " + kkibase_str);
         Serial.println("  kpa: " + kpa_str);
     } else {
-        Serial.print("KPA_KI (0x" + String(getRegisterOfResponse(kpa_ki), HEX) + "): ");
+        Serial.print("KPA_KI (0x" + String(kpa_ki, HEX) + "): ");
         Serial.println(kkibase_str + "  " + kpa_str);
     }
 }
@@ -349,7 +403,7 @@ void BOS1901::print_reg_config(bool verbose) {
     else if (playback_spd == 0x7) playback_spd_str += "-8ksps";
     
     if (verbose) {
-        Serial.println("CONFIG (0x" + String(getRegisterOfResponse(config), HEX) + "):");
+        Serial.println("CONFIG (0x" + String(config, HEX) + "):");
         Serial.println("  bc: " + bc_str);
         Serial.println("  reg_lock: " + reg_lock_str);
         Serial.println("  rst: " + rst_str);
@@ -357,7 +411,7 @@ void BOS1901::print_reg_config(bool verbose) {
         Serial.println("  ds: " + ds_str);
         Serial.println("  playback_spd: " + playback_spd_str);
     } else {
-        Serial.print("CONFIG (0x" + String(getRegisterOfResponse(config), HEX) + "): ");
+        Serial.print("CONFIG (0x" + String(config, HEX) + "): ");
         Serial.println(bc_str + "  " + reg_lock_concise_str + "  " + rst_concise_str + "  " + oe_concise_str + "  " + ds_concise_str + "  " + playback_spd_str);
     }
 }
@@ -387,14 +441,14 @@ void BOS1901::print_reg_parcap(bool verbose) {
     if (parcap_val == 0x3A) parcap_val_str += "-default";
 
     if (verbose) {
-        Serial.println("PARCAP (0x" + String(getRegisterOfResponse(parcap), HEX) + "):");
+        Serial.println("PARCAP (0x" + String(parcap, HEX) + "):");
         Serial.println("  upi: " + upi_str);
         Serial.println("  lmi: " + lmi_str);
         Serial.println("  cp5: " + cp5_str);
         Serial.println("  cal: " + cal_str);
         Serial.println("  parcap_val: " + parcap_val_str);
     } else {
-        Serial.print("PARCAP (0x" + String(getRegisterOfResponse(parcap), HEX) + "): ");
+        Serial.print("PARCAP (0x" + String(parcap, HEX) + "): ");
         Serial.println(upi_str_concise + "  " + lmi_str_concise + "  " + cp5_str_concise + "  " + cal_str_concise + "  " + parcap_val_str);
     }
 }
@@ -417,12 +471,12 @@ void BOS1901::print_reg_sup_rise(bool verbose) {
     if (tirise == 0x27) tirise_str += "-default";
 
     if (verbose) {
-        Serial.println("SUP_RISE (0x" + String(getRegisterOfResponse(sup_rise), HEX) + "):");
+        Serial.println("SUP_RISE (0x" + String(sup_rise, HEX) + "):");
         Serial.println("  sense: " + sense_str);
         Serial.println("  vdd: " + vdd_str);
         Serial.println("  tirise: " + tirise_str);
     } else {
-        Serial.print("SUP_RISE (0x" + String(getRegisterOfResponse(sup_rise), HEX) + "): ");
+        Serial.print("SUP_RISE (0x" + String(sup_rise, HEX) + "): ");
         Serial.println(sense_str_concise + "  " + vdd_str + "  " + tirise_str);
     }
 }
@@ -440,11 +494,11 @@ void BOS1901::print_reg_dac(bool verbose) {
     if (dac_ls == 0x2) dac_ls_str += "-default";
 
     if (verbose) {
-        Serial.println("DAC (0x" + String(getRegisterOfResponse(dac), HEX) + "):");
+        Serial.println("DAC (0x" + String(dac, HEX) + "):");
         Serial.println("  dac_hs: " + dac_hs_str);
         Serial.println("  dac_ls: " + dac_ls_str);
     } else {
-        Serial.print("DAC (0x" + String(getRegisterOfResponse(dac), HEX) + "): ");
+        Serial.print("DAC (0x" + String(dac, HEX) + "): ");
         Serial.println(dac_hs_str + "  " + dac_ls_str);
     }
 }
@@ -476,7 +530,7 @@ void BOS1901::print_reg_ic_status(bool verbose) {
     String fifo_space_str = String(fifo_space) + "-space";
 
     if (verbose) {
-        Serial.println("IC_STATUS (0x" + String(getRegisterOfResponse(ic_status), HEX) + "):");
+        Serial.println("IC_STATUS (0x" + String(ic_status, HEX) + "):");
         Serial.println("  state: " + state_str);
         Serial.println("  ovv: " + ovv_str);
         Serial.println("  ovt: " + ovt_str);
@@ -484,7 +538,7 @@ void BOS1901::print_reg_ic_status(bool verbose) {
         Serial.println("  empty: " + empty_str);
         Serial.println("  fifo_space: " + fifo_space_str);
     } else {
-        Serial.print("IC_STATUS (0x" + String(getRegisterOfResponse(ic_status), HEX) + "): ");
+        Serial.print("IC_STATUS (0x" + String(ic_status, HEX) + "): ");
         Serial.println(state_str + "  " + ovv_str + "  " + ovt_str + "  " + full_str + "  " + empty_str + "  " + fifo_space_str);
     }
 }
@@ -495,6 +549,23 @@ bool BOS1901::hasFifoSpace() {
 
     bool full = (ic_status_contents >> 7) & 0x1;
     return !full;
+}
+
+bool BOS1901::isFifoEmpty() {
+    auto ic_status = getRegisterContents(REG_IC_STATUS);
+    auto ic_status_contents = getContentOfResponse(ic_status);
+
+    bool empty = (ic_status_contents >> 6) & 0x1; 
+    return empty;
+}
+
+uint16_t BOS1901::getRemainingFifoSpace() {
+    auto ic_status = getRegisterContents(REG_IC_STATUS);
+    auto ic_status_contents = getContentOfResponse(ic_status);
+
+    bool empty = (ic_status_contents >> 6) & 0x1;
+    uint8_t fifo_space = ic_status_contents & 0x3F;
+    return (empty && fifo_space == 0) ? 64 : fifo_space;
 }
 
 void BOS1901::print_reg_sense(bool verbose) {
@@ -513,11 +584,11 @@ void BOS1901::print_reg_sense(bool verbose) {
     String v_feedback_str = String(v_feedback) + "-" + String(v_feedback_v, 2) + "V";
 
     if (verbose) {
-        Serial.println("SENSE (0x" + String(getRegisterOfResponse(sense), HEX) + "):");
+        Serial.println("SENSE (0x" + String(sense, HEX) + "):");
         Serial.println("  state: " + state_str);
         Serial.println("  v_feedback: " + v_feedback_str);
     } else {
-        Serial.print("SENSE (0x" + String(getRegisterOfResponse(sense), HEX) + "): ");
+        Serial.print("SENSE (0x" + String(sense, HEX) + "): ");
         Serial.println(state_str + "  " + v_feedback_str);
     }
 }
@@ -547,13 +618,13 @@ void BOS1901::print_reg_trim(bool verbose) {
     String trim_reg_str = String(trim_reg_int) + "-" + String(trim_reg_v, 2) + "V";
 
     if (verbose) {
-        Serial.println("TRIM (0x" + String(getRegisterOfResponse(trim), HEX) + "):");
+        Serial.println("TRIM (0x" + String(trim, HEX) + "):");
         Serial.println("  trim_rw: " + trim_rw_str);
         Serial.println("  sdobp: " + sdobp_str);
         Serial.println("  trim_osc: " + trim_osc_str);
         Serial.println("  trim_reg: " + trim_reg_str);
     } else {
-        Serial.print("TRIM (0x" + String(getRegisterOfResponse(trim), HEX) + "): ");
+        Serial.print("TRIM (0x" + String(trim, HEX) + "): ");
         Serial.println(trim_rw_str_concise + "  " + sdobp_str + "  " + trim_osc_str + "  " + trim_reg_str);
     }
 }
@@ -585,36 +656,21 @@ uint16_t BOS1901::writeWaveform(uint16_t waveForm) {
     return transfer(command);
 }
 
-double BOS1901::senseVoltage() {
+float BOS1901::senseVoltage() {
 
     // Set chip to SENSE, which mutes the waveform output, allowing 
     // the voltage to move freely and for us to get a reading.
+    //   >> This also sets the _outputRegister to REG_SENSE and 
+    //      _outputEnabled to true
     setSENSE(true);
 
-    // Set output to the sensing register (ensure OE is enabled)
-    setConfig(REG_SENSE, true);
-    uint16_t command = makeCommand(REG_SENSE, 0x0000);
-    _spi.write16(command);
-
     // Read the output
-    uint16_t data = transfer(command) & 0x0FFF;
-    return computeSensedVoltage(data);
+    uint16_t data = getRegisterContents(
+        REG_SENSE, // We want to read SENSE register
+        false,    // don't allow for cached data
+        REG_SENSE // anticipate continued stream of sensing
+    );
+    uint16_t vfeedback = data & 0x3ff;
+    auto vnet = vfeedback - _feedbackAdcOffset;
+    return computeSensedVoltage(vnet);
 }
-
-uint16_t BOS1901::getADCoffset() {
-
-    // Set output to the sensing register (ensure OE is enabled)
-    setConfig(REG_SENSE, true);
-    uint16_t command = makeCommand(REG_SENSE, 0x0000);
-    _spi.write16(command);
-
-    // Set sense to false, allowing us to drive output to 0V
-    setSENSE(false);
-    writeWaveform(0x0000);
-
-    uint16_t offsetResult = writeWaveform(0x0000);
-    offsetResult &= 0x0CFF; // Get VFEEDBACK (lowest 10 bits).
-
-    return offsetResult;
-}
-

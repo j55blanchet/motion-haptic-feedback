@@ -24,22 +24,32 @@ class BOS1901 {
     static const uint8_t REG_LOCK_DISABLE = 0x0;
     static const uint8_t REG_LOCK_ENABLE = 0x1;
 
+    static const uint8_t REG_NONE = 0xFF;
+
     SPIClass &_spi;
     uint8_t _chipSelectPin;
     uint8_t _playbackSpeed;
     uint8_t _vddSupRise;
     bool _lockRegisters;
+
     bool _outputEnabled;
+    uint8_t _outputRegister;
+    bool _outputMutedForSensing;
+
+    uint8_t _lastReceivedDataSource;
+    uint16_t _lastReceivedData;
+    uint16_t _feedbackAdcOffset;
     
-    uint16_t getRegisterContents(uint8_t reg_addr);
+    uint16_t getRegisterContents(uint8_t reg_addr, bool allow_cached = false, uint8_t next_reg_addr = REG_NONE, bool keep_registers_unlocked = false);
     uint16_t getContentOfResponse(uint16_t data);
     uint8_t getRegisterOfResponse(uint16_t data);
 
     static uint16_t makeCommand(uint8_t reg_addr, uint16_t data);
     uint16_t transfer(uint16_t write_command);
     uint16_t setConfig(uint8_t output_reg_select, bool enable_waveform_playback, bool override_unlock_registers=false);
-    void setSENSE(bool enableSensing);
+    
     uint16_t writeWaveform(uint16_t waveForm);
+    void writeToFifo(uint16_t value);
 
     public: 
         // Playback speeds in ksps (for use in the config secion)
@@ -66,12 +76,21 @@ class BOS1901 {
             );
 
         void reset();
-        uint16_t getADCoffset();
-        double senseVoltage();
+        float senseVoltage();
         void scanRegisters(bool verbose);
 
         bool hasFifoSpace();
-        void writeToFifo(float voltage);
+        uint16_t getRemainingFifoSpace();
+        bool isFifoEmpty();
+        
+        void setSquareWavePlayback(bool enable);
+        void setOutputEnabled(bool enabled);
+
+        void initializeSensing(bool muteWaveformOutput, bool positivePolarity = true);
+        void setSENSE(bool enableSensing);
+        void writeFifoVoltage(float voltage);
+        uint8_t getCachedDataSource();
+        uint16_t getCachedDataContents();
 
         void print_reg_reference(bool verbose);
         void print_reg_ion_bl(bool verbose);
